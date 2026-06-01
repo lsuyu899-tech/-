@@ -567,7 +567,7 @@ export default function HomePage() {
                             </span>
                           </div>
                           <a
-                            href={`https://www.xiaohongshu.com/explore/${post.noteId}`}
+                            href={`https://www.xiaohongshu.com/explore/${post.noteId}?xsec_token=${post.xsecToken}&xsec_source=pc_search`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-0.5 text-[10px] text-[#FF6B6B] hover:text-[#E85555] transition-colors"
@@ -612,7 +612,7 @@ export default function HomePage() {
                         <p className="text-xs text-[#6B7280] italic">该笔记无文字描述</p>
                       )}
                       <a
-                        href={`https://www.xiaohongshu.com/explore/${post.noteId}`}
+                        href={`https://www.xiaohongshu.com/explore/${post.noteId}?xsec_token=${post.xsecToken}&xsec_source=pc_search`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 mt-3 text-xs font-medium text-[#FF6B6B] hover:text-[#E85555] hover:underline transition-colors"
