@@ -27,7 +27,7 @@ interface TikHubNoteDetail {
 }
 
 function getApiKey(request?: NextRequest): string | undefined {
-  return request?.headers.get("x-tikhub-token") || process.env.TIKHUB_API_TOKEN;
+  return request?.headers.get("x-tikhub-token") || undefined;
 }
 
 async function fetchNoteDetail(

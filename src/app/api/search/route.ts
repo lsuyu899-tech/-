@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = request.headers.get("x-tikhub-token") || process.env.TIKHUB_API_TOKEN;
+    const apiKey = request.headers.get("x-tikhub-token");
     if (!apiKey) {
       console.error("[Search API] TikHub API Token not configured");
       return NextResponse.json({
