@@ -17,6 +17,7 @@ import {
   Bookmark,
   User,
   ImageOff,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -550,19 +551,31 @@ export default function HomePage() {
                       </CardHeader>
                       <CardContent className="px-4 pb-3 pt-0">
                         {/* Interaction stats */}
-                        <div className="flex items-center gap-3 text-xs text-[#6B7280]">
-                          <span className="flex items-center gap-0.5">
-                            <Heart className="h-3 w-3" />
-                            {post.likedCount}
-                          </span>
-                          <span className="flex items-center gap-0.5">
-                            <Bookmark className="h-3 w-3" />
-                            {post.collectedCount}
-                          </span>
-                          <span className="flex items-center gap-0.5">
-                            <MessageSquare className="h-3 w-3" />
-                            {post.commentCount}
-                          </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 text-xs text-[#6B7280]">
+                            <span className="flex items-center gap-0.5">
+                              <Heart className="h-3 w-3" />
+                              {post.likedCount}
+                            </span>
+                            <span className="flex items-center gap-0.5">
+                              <Bookmark className="h-3 w-3" />
+                              {post.collectedCount}
+                            </span>
+                            <span className="flex items-center gap-0.5">
+                              <MessageSquare className="h-3 w-3" />
+                              {post.commentCount}
+                            </span>
+                          </div>
+                          <a
+                            href={`https://www.xiaohongshu.com/explore/${post.noteId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-0.5 text-[10px] text-[#FF6B6B] hover:text-[#E85555] transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            小红书
+                            <ExternalLink className="h-2.5 w-2.5" />
+                          </a>
                         </div>
 
                         {/* Tags */}
@@ -598,6 +611,16 @@ export default function HomePage() {
                       {!post.desc && (
                         <p className="text-xs text-[#6B7280] italic">该笔记无文字描述</p>
                       )}
+                      <a
+                        href={`https://www.xiaohongshu.com/explore/${post.noteId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 mt-3 text-xs font-medium text-[#FF6B6B] hover:text-[#E85555] hover:underline transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        在小红书中查看
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
                     </div>
                   )}
                 </Card>
