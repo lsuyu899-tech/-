@@ -3,37 +3,27 @@ import { NextRequest, NextResponse } from "next/server";
 const TIKHUB_BASE_URL = "https://api.tikhub.io";
 
 interface TikHubNote {
-  note_id: string;
+  id: string;
   title: string;
   desc: string;
   type: string;
   user?: {
     nickname: string;
-    avatar?: string;
-    user_id?: string;
+    images?: string;
+    red_id?: string;
   };
-  interact_info?: {
-    liked_count?: string;
-    cover_cover_url?: string;
-    collected_count?: string;
-    comment_count?: string;
-    share_count?: string;
-  };
-  cover?: {
+  liked_count?: number;
+  collected_count?: number;
+  comments_count?: number;
+  shared_count?: number;
+  images_list?: Array<{
     url?: string;
-    url_default?: string;
-  };
+    url_size_large?: string;
+    width?: number;
+    height?: number;
+  }>;
   xsec_token?: string;
-  model_type?: string;
-  tag_list?: Array<{ id: string; name: string; type: string }>;
-}
-
-interface TikHubSearchResponse {
-  code: number;
-  message: string;
-  message_zh: string;
-  data: string; // JSON string containing search results
-  request_id: string;
+  tag_info?: { title: string; type: string };
 }
 
 export async function POST(request: NextRequest) {
@@ -105,9 +95,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result: TikHubSearchResponse = await response.json();
+    const result = await response.json();
 
-    if (result.code !== 200 || !result.data) {
+    if (result.code !== 200) {
       console.error("[Search API] TikHub returned error:", result.message);
       return NextResponse.json({
         success: false,
@@ -118,38 +108,41 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Parse the data field (it's a JSON string)
-    let searchData: { items?: TikHubNote[]; search_id?: string; search_session_id?: string };
+    // Navigate the nested data structure: result.data.data.items[].note
+    let notes: TikHubNote[] = [];
     try {
-      searchData = JSON.parse(result.data);
-    } catch {
-      console.error("[Search API] Failed to parse TikHub data field");
-      return NextResponse.json({
-        success: false,
-        error: "搜索结果解析失败",
-        keyword: kw,
-        count: 0,
-        posts: [],
-      });
+      const outerData = result.data;
+      if (outerData && typeof outerData === "object") {
+        const innerData = outerData.data;
+        if (innerData && typeof innerData === "object") {
+          const items = innerData.items;
+          if (Array.isArray(items)) {
+            notes = items
+              .filter((item: { model_type?: string; note?: TikHubNote }) => item.model_type === "note" && item.note)
+              .map((item: { note: TikHubNote }) => item.note);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[Search API] Failed to parse TikHub data structure:", e);
     }
-
-    const notes = searchData.items || [];
 
     // Transform notes to our Post format
     const posts = notes.map((note) => ({
-      id: note.note_id || "",
+      id: note.id || "",
       title: note.title || note.desc?.slice(0, 50) || "无标题",
       desc: note.desc || "",
-      coverUrl: note.cover?.url || note.cover?.url_default || "",
+      coverUrl: note.images_list?.[0]?.url_size_large || note.images_list?.[0]?.url || "",
       type: note.type || "",
       nickname: note.user?.nickname || "匿名用户",
-      likedCount: note.interact_info?.liked_count || "0",
-      collectedCount: note.interact_info?.collected_count || "0",
-      commentCount: note.interact_info?.comment_count || "0",
-      shareCount: note.interact_info?.share_count || "0",
+      avatarUrl: note.user?.images || "",
+      likedCount: String(note.liked_count || 0),
+      collectedCount: String(note.collected_count || 0),
+      commentCount: String(note.comments_count || 0),
+      shareCount: String(note.shared_count || 0),
       xsecToken: note.xsec_token || "",
-      noteId: note.note_id || "",
-      tags: (note.tag_list || []).map((t) => t.name).filter(Boolean),
+      noteId: note.id || "",
+      tags: note.tag_info?.title ? [note.tag_info.title] : [],
     }));
 
     return NextResponse.json({
@@ -157,11 +150,9 @@ export async function POST(request: NextRequest) {
       keyword: kw,
       count: posts.length,
       posts,
-      searchId: searchData.search_id || "",
-      searchSessionId: searchData.search_session_id || "",
     });
   } catch (error) {
-    console.error("[Search API Error]", error);
+    console.error("[Search API] Error:", error);
     return NextResponse.json({
       success: false,
       error: "搜索失败，请稍后重试",
