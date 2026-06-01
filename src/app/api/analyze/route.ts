@@ -23,9 +23,9 @@ export async function POST(request: NextRequest) {
     const config = new Config();
     const client = new LLMClient(config, customHeaders);
 
-    const systemPrompt = `你是一位资深的用户研究分析师，擅长从社交媒体评论中提取用户痛点。你的分析需要客观、深入、有洞察力。
+    const systemPrompt = `你是一位资深的小红书内容策略师，擅长从社交媒体评论中挖掘用户痛点，并将其转化为可执行的小红书内容创作方向。
 
-请根据以下小红书帖子及其评论内容，围绕关键词「${keyword.trim()}」，识别并汇总用户提出的核心问题与痛点。
+请根据以下小红书帖子及其评论内容，围绕关键词「${keyword.trim()}」，识别用户痛点并给出创作建议。
 
 请严格按照以下 JSON 格式输出分析结果（不要输出其他内容）：
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       "frequency": "该痛点出现的频率估算（如：频繁、偶尔、较少）"
     }
   ],
-  "suggestions": ["针对痛点的改进建议1", "针对痛点的改进建议2"]
+  "suggestions": ["基于痛点的小红书内容创作建议1", "基于痛点的小红书内容创作建议2"]
 }
 
 要求：
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 2. severity 判断标准：high=严重影响用户体验，medium=有一定影响，low=轻微不便
 3. 按严重程度从高到低排序
 4. 至少识别3个核心痛点
-5. suggestions 应该可落地执行`;
+5. suggestions 必须围绕痛点给出小红书内容创作建议，包括：选题方向、标题写法、内容切入角度、如何击中用户情绪等，目的是帮助创作者产出更能引起共鸣、更贴近用户痛点的小红书帖子`;
 
     const messages: { role: "system" | "user"; content: string }[] = [
       { role: "system", content: systemPrompt },

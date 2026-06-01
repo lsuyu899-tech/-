@@ -722,7 +722,7 @@ export default function HomePage() {
                 <CardHeader className="pb-2 pt-4 px-5">
                   <CardTitle className="text-sm font-semibold text-[#1A1A2E] flex items-center gap-2">
                     <Lightbulb className="h-4 w-4 text-[#F59E0B]" />
-                    改进建议
+                    创作建议
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="px-5 pb-4">
