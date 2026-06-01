@@ -234,9 +234,8 @@ export default function HomePage() {
     abortRef.current = abortController;
 
     try {
-      // Step 2: Fetch comments from xiaohongshu notes
+      // Step 2: Fetch comments from xiaohongshu notes via TikHub API
       const noteIds = posts.map((p) => p.noteId).filter(Boolean);
-      const xsecTokens = posts.map((p) => p.xsecToken).filter(Boolean);
 
       let allContent = "";
 
@@ -246,7 +245,6 @@ export default function HomePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             noteIds,
-            xsecTokens,
           }),
           signal: abortController.signal,
         });
@@ -256,8 +254,8 @@ export default function HomePage() {
         if (fetchData.success && fetchData.fetched > 0) {
           allContent = fetchData.results
             .filter((r: { status: string; content: string }) => r.status === "success" && r.content)
-            .map((r: { noteId: string; title: string; content: string }) => {
-              return `【笔记ID: ${r.noteId}】\n${r.content}`;
+            .map((r: { noteId: string; title: string; content: string; commentCount: number }) => {
+              return `【笔记ID: ${r.noteId}${r.title ? " - " + r.title : ""}】\n${r.content}`;
             })
             .join("\n---\n");
         }

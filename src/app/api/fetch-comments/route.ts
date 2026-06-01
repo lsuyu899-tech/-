@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FetchClient, Config, HeaderUtils } from "coze-coding-dev-sdk";
 
 const TIKHUB_BASE_URL = "https://api.tikhub.io";
+
+interface NoteResult {
+  noteId: string;
+  title: string;
+  content: string;
+  commentCount: number;
+  status: string;
+}
+
+function buildHeaders(apiKey: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { noteIds, xsecTokens } = body;
+    const { noteIds } = body as { noteIds: string[] };
 
     if (!noteIds || !Array.isArray(noteIds) || noteIds.length === 0) {
       return NextResponse.json(
@@ -16,93 +30,108 @@ export async function POST(request: NextRequest) {
     }
 
     const apiKey = process.env.TIKHUB_API_TOKEN;
-    const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-    const config = new Config();
-    const fetchClient = new FetchClient(config, customHeaders);
+    if (!apiKey) {
+      return NextResponse.json({
+        success: false,
+        error: "TikHub API Token 未配置，请在环境变量中设置 TIKHUB_API_TOKEN",
+        total: noteIds.length,
+        fetched: 0,
+        results: [],
+      });
+    }
 
-    // Fetch note content and comments for each note (limit to top 5)
+    const headers = buildHeaders(apiKey);
+
+    // Process up to 5 notes in parallel
     const targetIds = noteIds.slice(0, 5);
-    const fetchPromises = targetIds.map(async (noteId: string, index: number) => {
+    const fetchPromises = targetIds.map(async (noteId: string): Promise<NoteResult> => {
+      const result: NoteResult = {
+        noteId,
+        title: "",
+        content: "",
+        commentCount: 0,
+        status: "failed",
+      };
+
       try {
-        const results: { noteId: string; title: string; content: string; status: string } = {
-          noteId,
-          title: "",
-          content: "",
-          status: "failed",
-        };
+        // Step 1: Get note detail (title + description)
+        const detailUrl = `${TIKHUB_BASE_URL}/api/v1/xiaohongshu/app_v2/get_image_note_detail?note_id=${encodeURIComponent(noteId)}`;
+        const detailRes = await fetch(detailUrl, { headers });
 
-        // Strategy 1: Try TikHub API for note detail + comments
-        if (apiKey) {
-          try {
-            const xsecToken = xsecTokens?.[index] || "";
-            const noteUrl = `${TIKHUB_BASE_URL}/api/v1/xiaohongshu/app/v2/note/detail?note_id=${noteId}&xsec_token=${xsecToken}`;
-            const noteRes = await fetch(noteUrl, {
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-              },
-            });
+        let noteTitle = "";
+        let noteDesc = "";
 
-            if (noteRes.ok) {
-              const noteData = await noteRes.json();
-              if (noteData.code === 200 && noteData.data) {
-                const detail = JSON.parse(noteData.data);
-                const noteDetail = detail?.note_detail_map?.[noteId]?.note;
-                if (noteDetail) {
-                  results.title = noteDetail.title || "";
-                  const desc = noteDetail.desc || "";
-                  const comments = noteDetail.comment_list?.comments || [];
-                  const commentTexts = comments
-                    .map((c: { content?: string; user_info?: { nickname?: string } }) => {
-                      const name = c.user_info?.nickname || "用户";
-                      const text = c.content || "";
-                      return text ? `${name}: ${text}` : "";
-                    })
-                    .filter(Boolean)
-                    .join("\n");
+        if (detailRes.ok) {
+          const detailData = await detailRes.json();
+          if (detailData.code === 200 && detailData.data) {
+            try {
+              const parsed = typeof detailData.data === "string" ? JSON.parse(detailData.data) : detailData.data;
+              // Navigate the nested data structure
+              const noteDetail = parsed?.data?.noteDetailMap?.[noteId]?.note
+                || parsed?.note_detail_map?.[noteId]?.note
+                || parsed?.note
+                || null;
 
-                  results.content = [desc, commentTexts ? `---评论区---\n${commentTexts}` : ""]
-                    .filter(Boolean)
-                    .join("\n");
-                  results.status = results.content.length > 10 ? "success" : "failed";
+              if (noteDetail) {
+                noteTitle = noteDetail.title || noteDetail.display_title || "";
+                noteDesc = noteDetail.desc || noteDetail.description || "";
+                result.title = noteTitle;
+              }
+            } catch (parseErr) {
+              console.error(`[Parse Detail Error] ${noteId}:`, parseErr);
+            }
+          }
+        }
+
+        // Step 2: Get note comments (first page, sorted by latest for more relevant feedback)
+        const commentsUrl = `${TIKHUB_BASE_URL}/api/v1/xiaohongshu/app_v2/get_note_comments?note_id=${encodeURIComponent(noteId)}&index=0&sort_strategy=latest_v2`;
+        const commentsRes = await fetch(commentsUrl, { headers });
+
+        const commentTexts: string[] = [];
+
+        if (commentsRes.ok) {
+          const commentsData = await commentsRes.json();
+          if (commentsData.code === 200 && commentsData.data) {
+            try {
+              const parsed = typeof commentsData.data === "string" ? JSON.parse(commentsData.data) : commentsData.data;
+              const comments = parsed?.data?.comments
+                || parsed?.comments
+                || [];
+
+              result.commentCount = comments.length;
+
+              for (const comment of comments) {
+                const nickname = comment?.user_info?.nickname || comment?.nickname || "匿名用户";
+                const text = comment?.content || comment?.text || "";
+                const likeCount = comment?.like_count || comment?.liked_count || 0;
+
+                if (text) {
+                  const likeStr = likeCount > 0 ? ` (${likeCount}赞)` : "";
+                  commentTexts.push(`${nickname}${likeStr}: ${text}`);
                 }
               }
+            } catch (parseErr) {
+              console.error(`[Parse Comments Error] ${noteId}:`, parseErr);
             }
-          } catch (e) {
-            console.error(`[TikHub Note Detail Error] ${noteId}:`, e);
           }
         }
 
-        // Strategy 2: Fallback to fetch-url for xiaohongshu note page
-        if (results.status === "failed") {
-          try {
-            const xhsUrl = `https://www.xiaohongshu.com/explore/${noteId}`;
-            const response = await fetchClient.fetch(xhsUrl);
-            const textContent = (response.content || [])
-              .filter((item) => item.type === "text" && "text" in item && item.text)
-              .map((item) => item.text as string)
-              .join("\n");
-
-            if (textContent.length > 50) {
-              results.title = response.title || "";
-              results.content = textContent;
-              results.status = "success";
-            }
-          } catch (e) {
-            console.error(`[Fetch URL Error] ${noteId}:`, e);
-          }
+        // Combine note content and comments
+        const parts: string[] = [];
+        if (noteTitle) parts.push(`标题: ${noteTitle}`);
+        if (noteDesc) parts.push(`内容: ${noteDesc}`);
+        if (commentTexts.length > 0) {
+          parts.push(`---评论区 (${commentTexts.length}条)---`);
+          parts.push(...commentTexts);
         }
 
-        return results;
+        result.content = parts.join("\n");
+        result.status = result.content.length > 10 ? "success" : "failed";
       } catch (err) {
         console.error(`[Fetch Error] ${noteId}:`, err);
-        return {
-          noteId,
-          title: "",
-          content: "",
-          status: "failed",
-        };
       }
+
+      return result;
     });
 
     const results = await Promise.all(fetchPromises);
@@ -118,7 +147,7 @@ export async function POST(request: NextRequest) {
     console.error("[Fetch Comments API Error]", error);
     return NextResponse.json({
       success: false,
-      error: "抓取评论失败，请稍后重试",
+      error: "评论抓取失败，请稍后重试",
       total: 0,
       fetched: 0,
       results: [],
