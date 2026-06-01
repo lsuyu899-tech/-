@@ -34,7 +34,6 @@ interface Post {
   url: string | undefined;
   snippet: string;
   summary: string | undefined;
-  content: string | undefined;
   publishTime: string | undefined;
   siteName: string | undefined;
   rankScore: number | undefined;
@@ -208,50 +207,52 @@ export default function HomePage() {
     abortRef.current = abortController;
 
     try {
-      // Step 2: Fetch comments from all posts
+      // Step 2: Fetch comments from all posts (only valid post URLs)
       const validUrls = posts
-        .filter((p) => p.url)
+        .filter((p) => p.url && p.url !== "https://xiaohongshu.com/" && p.url !== "https://www.xiaohongshu.com/")
         .map((p) => p.url!);
 
-      const fetchRes = await fetch("/api/fetch-comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls: validUrls }),
-        signal: abortController.signal,
-      });
-
-      if (!fetchRes.ok) {
-        const err = await fetchRes.json();
-        throw new Error(err.error || "抓取评论失败");
-      }
-
-      const fetchData = await fetchRes.json();
-
-      // Combine all content from fetched results
       let allContent = "";
 
-      if (fetchData.results && fetchData.fetched > 0) {
-        allContent = fetchData.results
-          .filter((r: { status: string; content: string }) => r.status === "success" && r.content)
-          .map((r: { title: string; content: string; url: string }) => {
-            let text = `【${r.title || "帖子"}】\n${r.content}`;
-            const matchingPost = posts.find((p) => p.url === r.url);
-            if (matchingPost?.summary) {
-              text += `\n摘要：${matchingPost.summary}`;
-            }
-            return text;
-          })
-          .join("\n---\n");
+      // Only call fetch-comments if we have valid URLs to fetch
+      if (validUrls.length > 0) {
+        const fetchRes = await fetch("/api/fetch-comments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ urls: validUrls }),
+          signal: abortController.signal,
+        });
+
+        if (!fetchRes.ok) {
+          const err = await fetchRes.json();
+          throw new Error(err.error || "抓取评论失败");
+        }
+
+        const fetchData = await fetchRes.json();
+
+        // Combine all content from fetched results
+        if (fetchData.results && fetchData.fetched > 0) {
+          allContent = fetchData.results
+            .filter((r: { status: string; content: string }) => r.status === "success" && r.content)
+            .map((r: { title: string; content: string; url: string }) => {
+              let text = `【${r.title || "帖子"}】\n${r.content}`;
+              const matchingPost = posts.find((p) => p.url === r.url);
+              if (matchingPost?.summary) {
+                text += `\n摘要：${matchingPost.summary}`;
+              }
+              return text;
+            })
+            .join("\n---\n");
+        }
       }
 
-      // Fallback: use search content if fetch failed
+      // Fallback: use search snippets and summaries if fetch failed
       if (!allContent.trim()) {
         allContent = posts
           .map((p) => {
             let text = `【${p.title}】\n`;
             if (p.snippet) text += p.snippet + "\n";
             if (p.summary) text += "摘要：" + p.summary + "\n";
-            if (p.content) text += p.content + "\n";
             return text;
           })
           .join("\n---\n");
@@ -449,7 +450,7 @@ export default function HomePage() {
                     ? "done"
                     : "pending"
                 }
-                label="搜索小红书帖子"
+                label="搜索相关内容"
               />
               <StepIndicator
                 step={2}
@@ -462,7 +463,7 @@ export default function HomePage() {
                     ? "done"
                     : "pending"
                 }
-                label="抓取帖子评论内容"
+                label="抓取详细内容"
               />
               <StepIndicator
                 step={3}
@@ -492,7 +493,7 @@ export default function HomePage() {
               <h3 className="text-base font-semibold text-[#1A1A2E]">
                 搜索结果
                 <span className="ml-2 text-xs font-normal text-[#6B7280]">
-                  找到 {posts.length} 条相关帖子
+                  找到 {posts.length} 条相关内容
                 </span>
               </h3>
               {!isProcessing && stepStatus !== "done" && (
@@ -541,7 +542,12 @@ export default function HomePage() {
                       </div>
                     </div>
                     {post.publishTime && (
-                      <CardDescription className="text-xs text-[#6B7280] mt-1">
+                      <CardDescription className="text-xs text-[#6B7280] mt-1 flex items-center gap-2">
+                        {post.siteName && (
+                          <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-[#6B7280]">
+                            {post.siteName}
+                          </span>
+                        )}
                         {post.publishTime}
                       </CardDescription>
                     )}
@@ -560,17 +566,6 @@ export default function HomePage() {
                             </span>
                             <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">
                               {post.summary}
-                            </p>
-                          </div>
-                        )}
-                        {post.content && (
-                          <div>
-                            <span className="text-xs font-medium text-[#1A1A2E]">
-                              详细内容：
-                            </span>
-                            <p className="text-xs text-[#6B7280] mt-1 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
-                              {post.content.slice(0, 1000)}
-                              {post.content.length > 1000 ? "..." : ""}
                             </p>
                           </div>
                         )}

@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
 
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
       return NextResponse.json(
-        { error: "请提供有效的帖子URL列表" },
+        { success: false, error: "请提供有效的URL列表", total: 0, fetched: 0, results: [] },
         { status: 400 }
       );
     }
@@ -16,20 +16,21 @@ export async function POST(request: NextRequest) {
     const config = new Config();
     const client = new FetchClient(config, customHeaders);
 
-    // Fetch content from all URLs in parallel
-    const fetchPromises = urls.map(async (url: string) => {
+    // Fetch content from all URLs in parallel (limit to top 5 to avoid timeout)
+    const targetUrls = urls.slice(0, 5);
+    const fetchPromises = targetUrls.map(async (url: string) => {
       try {
         const response = await client.fetch(url);
         const textContent = (response.content || [])
-          .filter((item) => item.type === "text")
-          .map((item) => item.text)
+          .filter((item) => item.type === "text" && "text" in item && item.text)
+          .map((item) => item.text as string)
           .join("\n");
 
         return {
           url,
-          title: response.title,
+          title: response.title || "",
           content: textContent,
-          status: response.status_code === 0 ? "success" : "failed",
+          status: textContent.length > 50 ? "success" : "failed",
         };
       } catch (err) {
         console.error(`[Fetch Error] ${url}:`, err);
@@ -47,16 +48,25 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      total: urls.length,
+      total: targetUrls.length,
       fetched: successResults.length,
       results,
     });
   } catch (error) {
     console.error("[Fetch Comments API Error]", error);
-    const message =
-      error instanceof Error && error.message.includes("ErrBalanceOverdue")
-        ? "抓取服务暂时不可用，请稍后重试"
-        : "抓取评论失败，请稍后重试";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const isQuotaError =
+      error instanceof Error &&
+      (error.message.includes("ErrBalanceOverdue") ||
+        error.message.includes("Forbidden"));
+    const message = isQuotaError
+      ? "抓取服务暂时不可用，请稍后重试"
+      : "抓取评论失败，请稍后重试";
+    return NextResponse.json({
+      success: false,
+      error: message,
+      total: 0,
+      fetched: 0,
+      results: [],
+    });
   }
 }
