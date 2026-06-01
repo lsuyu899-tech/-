@@ -7,12 +7,16 @@ import {
   AlertTriangle,
   TrendingUp,
   Lightbulb,
-  ExternalLink,
   ChevronDown,
   ChevronUp,
   Zap,
   ArrowRight,
   RefreshCw,
+  Heart,
+  MessageSquare,
+  Bookmark,
+  User,
+  ImageOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,12 +35,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface Post {
   id: string;
   title: string;
-  url: string | undefined;
-  snippet: string;
-  summary: string | undefined;
-  publishTime: string | undefined;
-  siteName: string | undefined;
-  rankScore: number | undefined;
+  desc: string;
+  coverUrl: string;
+  type: string;
+  nickname: string;
+  likedCount: string;
+  collectedCount: string;
+  commentCount: string;
+  shareCount: string;
+  xsecToken: string;
+  noteId: string;
+  tags: string[];
 }
 
 interface PainPoint {
@@ -137,6 +146,29 @@ function StepIndicator({
   );
 }
 
+// Note cover image component
+function NoteCover({ src, alt }: { src: string; alt: string }) {
+  const [error, setError] = useState(false);
+
+  if (!src || error) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-gray-100 rounded-l-xl">
+        <ImageOff className="h-6 w-6 text-gray-300" />
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className="h-full w-full object-cover rounded-l-xl"
+      onError={() => setError(true)}
+    />
+  );
+}
+
 // Main page component
 export default function HomePage() {
   const [keyword, setKeyword] = useState("");
@@ -166,11 +198,6 @@ export default function HomePage() {
         body: JSON.stringify({ keyword: keyword.trim() }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "搜索失败");
-      }
-
       const data = await res.json();
 
       if (!data.success) {
@@ -180,7 +207,7 @@ export default function HomePage() {
       }
 
       if (!data.posts || data.posts.length === 0) {
-        setErrorMessage(`未找到「${keyword.trim()}」相关的小红书帖子，请尝试其他关键词`);
+        setErrorMessage(`未找到「${keyword.trim()}」相关的小红书笔记，请尝试其他关键词`);
         setStepStatus("error");
         return;
       }
@@ -207,59 +234,50 @@ export default function HomePage() {
     abortRef.current = abortController;
 
     try {
-      // Step 2: Fetch comments from all posts (only valid post URLs)
-      const validUrls = posts
-        .filter((p) => p.url && p.url !== "https://xiaohongshu.com/" && p.url !== "https://www.xiaohongshu.com/")
-        .map((p) => p.url!);
+      // Step 2: Fetch comments from xiaohongshu notes
+      const noteIds = posts.map((p) => p.noteId).filter(Boolean);
+      const xsecTokens = posts.map((p) => p.xsecToken).filter(Boolean);
 
       let allContent = "";
 
-      // Only call fetch-comments if we have valid URLs to fetch
-      if (validUrls.length > 0) {
+      if (noteIds.length > 0) {
         const fetchRes = await fetch("/api/fetch-comments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ urls: validUrls }),
+          body: JSON.stringify({
+            noteIds,
+            xsecTokens,
+          }),
           signal: abortController.signal,
         });
 
-        if (!fetchRes.ok) {
-          const err = await fetchRes.json();
-          throw new Error(err.error || "抓取评论失败");
-        }
-
         const fetchData = await fetchRes.json();
 
-        // Combine all content from fetched results
-        if (fetchData.results && fetchData.fetched > 0) {
+        if (fetchData.success && fetchData.fetched > 0) {
           allContent = fetchData.results
             .filter((r: { status: string; content: string }) => r.status === "success" && r.content)
-            .map((r: { title: string; content: string; url: string }) => {
-              let text = `【${r.title || "帖子"}】\n${r.content}`;
-              const matchingPost = posts.find((p) => p.url === r.url);
-              if (matchingPost?.summary) {
-                text += `\n摘要：${matchingPost.summary}`;
-              }
-              return text;
+            .map((r: { noteId: string; title: string; content: string }) => {
+              return `【笔记ID: ${r.noteId}】\n${r.content}`;
             })
             .join("\n---\n");
         }
       }
 
-      // Fallback: use search snippets and summaries if fetch failed
+      // Fallback: use note descriptions as analysis content
       if (!allContent.trim()) {
         allContent = posts
           .map((p) => {
-            let text = `【${p.title}】\n`;
-            if (p.snippet) text += p.snippet + "\n";
-            if (p.summary) text += "摘要：" + p.summary + "\n";
+            let text = `【${p.title}】by ${p.nickname}\n`;
+            if (p.desc) text += p.desc + "\n";
+            if (p.tags.length > 0) text += `标签: ${p.tags.join("、")}\n`;
+            text += `互动数据: 点赞${p.likedCount} 收藏${p.collectedCount} 评论${p.commentCount}`;
             return text;
           })
           .join("\n---\n");
       }
 
       if (!allContent.trim()) {
-        throw new Error("无法获取有效的帖子内容");
+        throw new Error("无法获取有效的笔记内容");
       }
 
       // Step 3: Analyze with LLM (streaming)
@@ -317,7 +335,6 @@ export default function HomePage() {
 
       // Try to parse the final result as JSON
       try {
-        // Extract JSON from the response (may contain markdown code blocks)
         const jsonMatch = fullText.match(/```json\s*([\s\S]*?)```/) ||
           fullText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -326,7 +343,6 @@ export default function HomePage() {
           setAnalysisResult(parsed);
         }
       } catch {
-        // If JSON parsing fails, keep the raw text display
         console.log("Could not parse analysis result as JSON");
       }
 
@@ -450,7 +466,7 @@ export default function HomePage() {
                     ? "done"
                     : "pending"
                 }
-                label="搜索相关内容"
+                label="搜索小红书笔记"
               />
               <StepIndicator
                 step={2}
@@ -463,7 +479,7 @@ export default function HomePage() {
                     ? "done"
                     : "pending"
                 }
-                label="抓取详细内容"
+                label="抓取笔记内容与评论"
               />
               <StepIndicator
                 step={3}
@@ -486,14 +502,14 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Search Results */}
+        {/* Search Results - XHS Note Cards */}
         {posts.length > 0 && (
           <section className="mb-10">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold text-[#1A1A2E]">
-                搜索结果
+                小红书笔记
                 <span className="ml-2 text-xs font-normal text-[#6B7280]">
-                  找到 {posts.length} 条相关内容
+                  找到 {posts.length} 条相关笔记
                 </span>
               </h3>
               {!isProcessing && stepStatus !== "done" && (
@@ -512,66 +528,80 @@ export default function HomePage() {
               {posts.map((post) => (
                 <Card
                   key={post.id}
-                  className="border-[#E5E7EB] bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+                  className="border-[#E5E7EB] bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md cursor-pointer overflow-hidden"
                   onClick={() =>
                     setExpandedPost(expandedPost === post.id ? null : post.id)
                   }
                 >
-                  <CardHeader className="pb-2 pt-4 px-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <CardTitle className="text-sm font-semibold text-[#1A1A2E] leading-snug line-clamp-2">
-                        {post.title}
-                      </CardTitle>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {post.url && (
-                          <a
-                            href={post.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="rounded p-1 text-gray-400 hover:text-[#FF6B6B] hover:bg-red-50 transition-colors"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        )}
-                        {expandedPost === post.id ? (
-                          <ChevronUp className="h-4 w-4 text-gray-400" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-gray-400" />
-                        )}
-                      </div>
+                  <div className="flex">
+                    {/* Cover Image */}
+                    <div className="w-28 h-28 shrink-0">
+                      <NoteCover src={post.coverUrl} alt={post.title} />
                     </div>
-                    {post.publishTime && (
-                      <CardDescription className="text-xs text-[#6B7280] mt-1 flex items-center gap-2">
-                        {post.siteName && (
-                          <span className="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-[#6B7280]">
-                            {post.siteName}
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <CardHeader className="pb-1 pt-3 px-4">
+                        <CardTitle className="text-sm font-semibold text-[#1A1A2E] leading-snug line-clamp-2">
+                          {post.title}
+                        </CardTitle>
+                        <CardDescription className="text-xs text-[#6B7280] mt-1 flex items-center gap-1.5">
+                          <User className="h-3 w-3" />
+                          {post.nickname}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="px-4 pb-3 pt-0">
+                        {/* Interaction stats */}
+                        <div className="flex items-center gap-3 text-xs text-[#6B7280]">
+                          <span className="flex items-center gap-0.5">
+                            <Heart className="h-3 w-3" />
+                            {post.likedCount}
                           </span>
-                        )}
-                        {post.publishTime}
-                      </CardDescription>
-                    )}
-                  </CardHeader>
-                  <CardContent className="px-5 pb-4">
-                    <p className="text-xs text-[#6B7280] leading-relaxed line-clamp-2">
-                      {post.snippet}
-                    </p>
-                    {expandedPost === post.id && (
-                      <div className="mt-3 space-y-2">
-                        <Separator />
-                        {post.summary && (
-                          <div>
-                            <span className="text-xs font-medium text-[#1A1A2E]">
-                              AI 摘要：
-                            </span>
-                            <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">
-                              {post.summary}
-                            </p>
+                          <span className="flex items-center gap-0.5">
+                            <Bookmark className="h-3 w-3" />
+                            {post.collectedCount}
+                          </span>
+                          <span className="flex items-center gap-0.5">
+                            <MessageSquare className="h-3 w-3" />
+                            {post.commentCount}
+                          </span>
+                        </div>
+
+                        {/* Tags */}
+                        {post.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {post.tags.slice(0, 3).map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-[#FF6B6B]"
+                              >
+                                #{tag}
+                              </span>
+                            ))}
+                            {post.tags.length > 3 && (
+                              <span className="text-[10px] text-[#6B7280]">
+                                +{post.tags.length - 3}
+                              </span>
+                            )}
                           </div>
                         )}
-                      </div>
-                    )}
-                  </CardContent>
+                      </CardContent>
+                    </div>
+                  </div>
+
+                  {/* Expanded content */}
+                  {expandedPost === post.id && (
+                    <div className="border-t border-[#E5E7EB] px-4 py-3 bg-[#FAFAFA]">
+                      {post.desc && (
+                        <p className="text-xs text-[#1A1A2E] leading-relaxed whitespace-pre-wrap">
+                          {post.desc}
+                        </p>
+                      )}
+                      {!post.desc && (
+                        <p className="text-xs text-[#6B7280] italic">该笔记无文字描述</p>
+                      )}
+                    </div>
+                  )}
                 </Card>
               ))}
             </div>
@@ -703,15 +733,15 @@ export default function HomePage() {
             </div>
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <Card key={i} className="border-[#E5E7EB] bg-white">
-                  <CardHeader className="pb-2 pt-4 px-5">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-1/4 mt-2" />
-                  </CardHeader>
-                  <CardContent className="px-5 pb-4">
-                    <Skeleton className="h-3 w-full" />
-                    <Skeleton className="h-3 w-2/3 mt-2" />
-                  </CardContent>
+                <Card key={i} className="border-[#E5E7EB] bg-white overflow-hidden">
+                  <div className="flex">
+                    <Skeleton className="w-28 h-28 rounded-none" />
+                    <div className="flex-1 p-4">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/4 mt-2" />
+                      <Skeleton className="h-3 w-1/2 mt-3" />
+                    </div>
+                  </div>
                 </Card>
               ))}
             </div>
@@ -725,7 +755,7 @@ export default function HomePage() {
               <Search className="h-7 w-7 text-gray-400" />
             </div>
             <p className="mt-4 text-sm text-[#6B7280]">
-              输入关键词开始搜索小红书帖子
+              输入关键词搜索小红书笔记
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {["护肤品", "租房", "减肥", "职场", "健身"].map((tag) => (
