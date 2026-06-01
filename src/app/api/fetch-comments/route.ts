@@ -26,8 +26,8 @@ interface TikHubNoteDetail {
   comments_count?: number;
 }
 
-function getApiKey(): string | undefined {
-  return process.env.TIKHUB_API_TOKEN;
+function getApiKey(request?: NextRequest): string | undefined {
+  return request?.headers.get("x-tikhub-token") || process.env.TIKHUB_API_TOKEN;
 }
 
 async function fetchNoteDetail(
@@ -134,11 +134,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = getApiKey();
+    const apiKey = getApiKey(request);
     if (!apiKey) {
       return NextResponse.json({
         success: false,
-        error: "TikHub API Token 未配置，请在环境变量中设置 TIKHUB_API_TOKEN",
+        error: "请先配置 TikHub API Token（点击顶部「配置 Token」按钮）",
         total: noteIds.length,
         fetched: 0,
         results: [],

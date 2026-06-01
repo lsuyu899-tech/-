@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Search,
   Loader2,
@@ -18,6 +18,7 @@ import {
   User,
   ImageOff,
   ExternalLink,
+  Key,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -173,6 +174,9 @@ function NoteCover({ src, alt }: { src: string; alt: string }) {
 // Main page component
 export default function HomePage() {
   const [keyword, setKeyword] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [stepStatus, setStepStatus] = useState<StepStatus>("idle");
   const [analysisText, setAnalysisText] = useState("");
@@ -180,6 +184,27 @@ export default function HomePage() {
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("tikhub_api_key");
+    if (saved) setApiKey(saved);
+    setApiKeyLoaded(true);
+  }, []);
+
+  // Save API key to localStorage when it changes
+  useEffect(() => {
+    if (apiKeyLoaded && apiKey) {
+      localStorage.setItem("tikhub_api_key", apiKey);
+    }
+  }, [apiKey, apiKeyLoaded]);
+
+  // Helper to build headers with API key
+  const getHeaders = useCallback(() => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) headers["x-tikhub-token"] = apiKey;
+    return headers;
+  }, [apiKey]);
 
   // Step 1: Search for posts
   const handleSearch = useCallback(async () => {
@@ -195,7 +220,7 @@ export default function HomePage() {
     try {
       const res = await fetch("/api/search", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getHeaders(),
         body: JSON.stringify({ keyword: keyword.trim() }),
       });
 
@@ -243,7 +268,7 @@ export default function HomePage() {
       if (noteIds.length > 0) {
         const fetchRes = await fetch("/api/fetch-comments", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getHeaders(),
           body: JSON.stringify({
             noteIds,
           }),
@@ -284,7 +309,7 @@ export default function HomePage() {
 
       const analyzeRes = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getHeaders(),
         body: JSON.stringify({
           keyword: keyword.trim(),
           comments: allContent,
@@ -393,18 +418,63 @@ export default function HomePage() {
               小红书痛点洞察
             </h1>
           </div>
-          {stepStatus !== "idle" && (
+          <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleReset}
-              className="ml-auto text-xs text-gray-500 hover:text-[#1A1A2E]"
+              onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+              className={`text-xs ${apiKey ? "text-emerald-600 hover:text-emerald-700" : "text-gray-500 hover:text-[#1A1A2E]"}`}
             >
-              <RefreshCw className="mr-1 h-3 w-3" />
-              重新开始
+              <Key className="mr-1 h-3 w-3" />
+              {apiKey ? "Token 已配置" : "配置 Token"}
             </Button>
-          )}
+            {stepStatus !== "idle" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleReset}
+                className="text-xs text-gray-500 hover:text-[#1A1A2E]"
+              >
+                <RefreshCw className="mr-1 h-3 w-3" />
+                重新开始
+              </Button>
+            )}
+          </div>
         </div>
+        {/* API Key Input Panel */}
+        {showApiKeyInput && (
+          <div className="border-t border-[#E5E7EB] bg-gray-50/80 px-6 py-3">
+            <div className="mx-auto max-w-5xl">
+              <div className="flex items-center gap-3">
+                <Key className="h-4 w-4 text-gray-400 shrink-0" />
+                <Input
+                  type="password"
+                  placeholder="输入你的 TikHub API Token"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="h-8 text-sm font-mono bg-white"
+                />
+                {apiKey && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setApiKey(""); localStorage.removeItem("tikhub_api_key"); }}
+                    className="text-xs text-red-500 hover:text-red-600 shrink-0"
+                  >
+                    清除
+                  </Button>
+                )}
+              </div>
+              <p className="mt-1.5 text-xs text-gray-400">
+                Token 将保存在浏览器本地，不会上传到服务器。获取 Token：前往{" "}
+                <a href="https://tikhub.io" target="_blank" rel="noopener noreferrer" className="text-[#FF6B6B] hover:underline">
+                  tikhub.io
+                </a>{" "}
+                注册后在用户中心创建 API Token。
+              </p>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="mx-auto max-w-5xl px-6 pb-20">

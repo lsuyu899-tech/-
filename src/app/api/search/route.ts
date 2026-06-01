@@ -37,12 +37,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.TIKHUB_API_TOKEN;
+    const apiKey = request.headers.get("x-tikhub-token") || process.env.TIKHUB_API_TOKEN;
     if (!apiKey) {
-      console.error("[Search API] TIKHUB_API_TOKEN not configured");
+      console.error("[Search API] TikHub API Token not configured");
       return NextResponse.json({
         success: false,
-        error: "TikHub API Token 未配置，请在环境变量中设置 TIKHUB_API_TOKEN",
+        error: "请先配置 TikHub API Token（点击顶部「配置 Token」按钮）",
         keyword: "",
         count: 0,
         posts: [],
