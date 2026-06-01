@@ -210,6 +210,14 @@ export default function HomePage() {
   const handleSearch = useCallback(async () => {
     if (!keyword.trim()) return;
 
+    // Check API key before searching
+    const currentKey = apiKey || localStorage.getItem("tikhub_api_key") || "";
+    if (!currentKey) {
+      setErrorMessage("请先配置 TikHub API Token（点击顶部「配置 Token」按钮）");
+      setStepStatus("error");
+      return;
+    }
+
     // Reset states
     setPosts([]);
     setAnalysisText("");
@@ -218,9 +226,12 @@ export default function HomePage() {
     setStepStatus("searching");
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      headers["x-tikhub-token"] = currentKey;
+
       const res = await fetch("/api/search", {
         method: "POST",
-        headers: getHeaders(),
+        headers,
         body: JSON.stringify({ keyword: keyword.trim() }),
       });
 
@@ -262,13 +273,16 @@ export default function HomePage() {
     try {
       // Step 2: Fetch comments from xiaohongshu notes via TikHub API
       const noteIds = posts.map((p) => p.noteId).filter(Boolean);
+      const currentKey = apiKey || localStorage.getItem("tikhub_api_key") || "";
+      const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (currentKey) reqHeaders["x-tikhub-token"] = currentKey;
 
       let allContent = "";
 
       if (noteIds.length > 0) {
         const fetchRes = await fetch("/api/fetch-comments", {
           method: "POST",
-          headers: getHeaders(),
+          headers: reqHeaders,
           body: JSON.stringify({
             noteIds,
           }),
@@ -454,6 +468,19 @@ export default function HomePage() {
                   onChange={(e) => setApiKey(e.target.value)}
                   className="h-8 text-sm font-mono bg-white"
                 />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (apiKey) {
+                      localStorage.setItem("tikhub_api_key", apiKey);
+                      setShowApiKeyInput(false);
+                    }
+                  }}
+                  className="text-xs text-emerald-600 hover:text-emerald-700 shrink-0"
+                >
+                  确认
+                </Button>
                 {apiKey && (
                   <Button
                     variant="ghost"
