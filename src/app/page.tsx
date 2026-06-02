@@ -183,6 +183,7 @@ export default function HomePage() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [analyzeCount, setAnalyzeCount] = useState(3);
   const abortRef = useRef<AbortController | null>(null);
 
   // Load API key from localStorage on mount
@@ -272,7 +273,14 @@ export default function HomePage() {
 
     try {
       // Step 2: Fetch comments from xiaohongshu notes via TikHub API
-      const noteIds = posts.map((p) => p.noteId).filter(Boolean);
+      const selectedPosts = posts.slice(0, analyzeCount);
+      const noteIds = selectedPosts.map((p) => p.noteId).filter(Boolean);
+      const noteDescriptions = selectedPosts.reduce<Record<string, string>>((acc, p) => {
+        if (p.noteId && (p.title || p.desc)) {
+          acc[p.noteId] = `【${p.title}】by ${p.nickname}\n${p.desc || ""}`;
+        }
+        return acc;
+      }, {});
       const currentKey = apiKey || localStorage.getItem("tikhub_api_key") || "";
       const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
       if (currentKey) reqHeaders["x-tikhub-token"] = currentKey;
@@ -285,6 +293,7 @@ export default function HomePage() {
           headers: reqHeaders,
           body: JSON.stringify({
             noteIds,
+            noteDescriptions,
           }),
           signal: abortController.signal,
         });
@@ -609,14 +618,33 @@ export default function HomePage() {
                 </span>
               </h3>
               {!isProcessing && stepStatus !== "done" && (
-                <Button
-                  onClick={handleAnalyze}
-                  className="bg-[#FF6B6B] text-white shadow-sm hover:bg-[#FF5252] active:scale-95 transition-all"
-                  size="sm"
-                >
-                  开始分析
-                  <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                </Button>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-xs text-[#6B7280]">
+                    <span>分析笔记数:</span>
+                    {[1, 3, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setAnalyzeCount(n)}
+                        className={`px-2 py-0.5 rounded text-xs font-medium transition-all ${
+                          analyzeCount === n
+                            ? "bg-[#FF6B6B] text-white"
+                            : "bg-[#F3F4F6] text-[#6B7280] hover:bg-[#E5E7EB]"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    <span className="text-[10px] text-[#9CA3AF]">越多越准, 费用越高</span>
+                  </div>
+                  <Button
+                    onClick={handleAnalyze}
+                    className="bg-[#FF6B6B] text-white shadow-sm hover:bg-[#FF5252] active:scale-95 transition-all"
+                    size="sm"
+                  >
+                    开始分析
+                    <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                  </Button>
+                </div>
               )}
             </div>
 

@@ -15,61 +15,21 @@ interface TikHubComment {
   sub_comments?: TikHubComment[];
 }
 
-interface TikHubNoteDetail {
-  title?: string;
-  desc?: string;
-  type?: string;
-  user?: {
-    nickname?: string;
-  };
-  liked_count?: number;
-  comments_count?: number;
-}
-
 function getApiKey(request?: NextRequest): string | undefined {
   return request?.headers.get("x-tikhub-token") || undefined;
-}
-
-async function fetchNoteDetail(
-  noteId: string,
-  apiKey: string
-): Promise<{ title: string; desc: string } | null> {
-  try {
-    const url = `${TIKHUB_BASE_URL}/api/v1/xiaohongshu/app_v2/get_image_note_detail?note_id=${encodeURIComponent(noteId)}`;
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) return null;
-
-    const result = await response.json();
-    if (result.code !== 200 || !result.data) return null;
-
-    const data = result.data;
-    const noteData = data.data || data;
-    return {
-      title: noteData.title || "",
-      desc: noteData.desc || "",
-    };
-  } catch (e) {
-    console.error("[FetchComments] Note detail error:", e);
-    return null;
-  }
 }
 
 async function fetchNoteComments(
   noteId: string,
   apiKey: string,
-  maxComments: number = 50
+  maxComments: number = 20
 ): Promise<string[]> {
   const allComments: string[] = [];
   let cursor = "";
   let hasMore = true;
+  let pageCount = 0;
 
-  while (hasMore && allComments.length < maxComments) {
+  while (hasMore && allComments.length < maxComments && pageCount < 2) {
     try {
       const params = new URLSearchParams({
         note_id: noteId,
@@ -110,6 +70,7 @@ async function fetchNoteComments(
         }
       }
 
+      pageCount++;
       hasMore = innerData.has_more === true;
       cursor = String(innerData.cursor || "");
       if (!cursor) hasMore = false;
@@ -125,7 +86,10 @@ async function fetchNoteComments(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { noteIds } = body;
+    const { noteIds, noteDescriptions } = body as {
+      noteIds: string[];
+      noteDescriptions?: Record<string, string>;
+    };
 
     if (!noteIds || !Array.isArray(noteIds) || noteIds.length === 0) {
       return NextResponse.json(
@@ -145,6 +109,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Default to 20 comments per note (1 API call), max 2 pages
+    const maxComments = 20;
+
     const results: Array<{
       noteId: string;
       title: string;
@@ -155,21 +122,19 @@ export async function POST(request: NextRequest) {
 
     for (const noteId of noteIds) {
       try {
-        // Fetch note detail
-        const detail = await fetchNoteDetail(noteId, apiKey);
+        // Use description from search results instead of extra API call
+        const desc = noteDescriptions?.[noteId] || "";
 
-        // Fetch comments
-        const comments = await fetchNoteComments(noteId, apiKey, 50);
+        // Fetch comments (1-2 API calls per note instead of 3-4)
+        const comments = await fetchNoteComments(noteId, apiKey, maxComments);
 
-        const title = detail?.title || "";
-        const desc = detail?.desc || "";
         const combinedContent = [desc, "--- 评论区 ---", ...comments]
           .filter(Boolean)
           .join("\n");
 
         results.push({
           noteId,
-          title,
+          title: "",
           content: combinedContent,
           commentCount: comments.length,
           status: "success",
