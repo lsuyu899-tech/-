@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCached, setCache, searchCacheKey } from "@/lib/cache";
 
 const TIKHUB_BASE_URL = "https://api.tikhub.io";
 
@@ -51,6 +52,15 @@ export async function POST(request: NextRequest) {
 
     const kw = keyword.trim();
 
+    // Check cache first — skip API call if same keyword searched recently
+    const cacheKey = searchCacheKey(kw, "popularity_descending", "一周内");
+    const cachedResult = getCached<{ success: boolean; keyword: string; count: number; posts: unknown[] }>(cacheKey);
+    if (cachedResult) {
+      console.log(`[Search API] Cache HIT for "${kw}", returning cached results`);
+      return NextResponse.json({ ...cachedResult, fromCache: true });
+    }
+    console.log(`[Search API] Cache MISS for "${kw}", calling TikHub API`);
+
     // Search with popularity sorting to get hot posts
     const params = new URLSearchParams({
       keyword: kw,
@@ -95,23 +105,23 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await response.json();
+    const tikhubRes = await response.json();
 
-    if (result.code !== 200) {
-      console.error("[Search API] TikHub returned error:", result.message);
+    if (tikhubRes.code !== 200) {
+      console.error("[Search API] TikHub returned error:", tikhubRes.message);
       return NextResponse.json({
         success: false,
-        error: result.message_zh || result.message || "搜索失败",
+        error: tikhubRes.message_zh || tikhubRes.message || "搜索失败",
         keyword: kw,
         count: 0,
         posts: [],
       });
     }
 
-    // Navigate the nested data structure: result.data.data.items[].note
+    // Navigate the nested data structure: tikhubRes.data.data.items[].note
     let notes: TikHubNote[] = [];
     try {
-      const outerData = result.data;
+      const outerData = tikhubRes.data;
       if (outerData && typeof outerData === "object") {
         const innerData = outerData.data;
         if (innerData && typeof innerData === "object") {
@@ -145,12 +155,17 @@ export async function POST(request: NextRequest) {
       tags: note.tag_info?.title ? [note.tag_info.title] : [],
     }));
 
-    return NextResponse.json({
+    const result = {
       success: true,
       keyword: kw,
       count: posts.length,
       posts,
-    });
+    };
+
+    // Cache search results for 2 hours
+    setCache(cacheKey, result);
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("[Search API] Error:", error);
     return NextResponse.json({

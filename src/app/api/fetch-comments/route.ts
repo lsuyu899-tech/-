@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCached, setCache } from "@/lib/cache";
 
 const TIKHUB_BASE_URL = "https://api.tikhub.io";
 
@@ -24,6 +25,14 @@ async function fetchNoteComments(
   apiKey: string,
   maxComments: number = 20
 ): Promise<string[]> {
+  // Check cache first
+  const cacheKey = `comments:${noteId}`;
+  const cached = getCached<string[]>(cacheKey);
+  if (cached) {
+    console.log("[FetchComments] Cache hit for", noteId);
+    return cached.slice(0, maxComments);
+  }
+
   const allComments: string[] = [];
   let cursor = "";
   let hasMore = true;
@@ -80,6 +89,11 @@ async function fetchNoteComments(
     }
   }
 
+  // Cache the result
+  if (allComments.length > 0) {
+    setCache(cacheKey, allComments);
+  }
+
   return allComments;
 }
 
@@ -122,6 +136,21 @@ export async function POST(request: NextRequest) {
 
     for (const noteId of noteIds) {
       try {
+        // Check per-note result cache
+        const noteCacheKey = `noteResult:${noteId}`;
+        const cachedNote = getCached<{
+          noteId: string;
+          title: string;
+          content: string;
+          commentCount: number;
+          status: string;
+        }>(noteCacheKey);
+        if (cachedNote) {
+          console.log("[FetchComments] Cache hit for note result", noteId);
+          results.push(cachedNote);
+          continue;
+        }
+
         // Use description from search results instead of extra API call
         const desc = noteDescriptions?.[noteId] || "";
 
@@ -132,13 +161,16 @@ export async function POST(request: NextRequest) {
           .filter(Boolean)
           .join("\n");
 
-        results.push({
+        const noteResult = {
           noteId,
           title: "",
           content: combinedContent,
           commentCount: comments.length,
-          status: "success",
-        });
+          status: "success" as const,
+        };
+        results.push(noteResult);
+        // Cache successful result
+        setCache(noteCacheKey, noteResult);
       } catch (e) {
         console.error(`[FetchComments] Error fetching note ${noteId}:`, e);
         results.push({

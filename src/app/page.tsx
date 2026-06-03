@@ -219,6 +219,19 @@ export default function HomePage() {
       return;
     }
 
+    // Check localStorage cache first (valid for 2 hours)
+    try {
+      const cached = localStorage.getItem(`xhs_search_${keyword.trim()}`);
+      if (cached) {
+        const { posts: cachedPosts, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < 2 * 60 * 60 * 1000 && cachedPosts?.length > 0) {
+          setPosts(cachedPosts);
+          setStepStatus("idle");
+          return;
+        }
+      }
+    } catch {}
+
     // Reset states
     setPosts([]);
     setAnalysisText("");
@@ -250,8 +263,20 @@ export default function HomePage() {
         return;
       }
 
-      setPosts(data.posts);
+      // Filter out posts with 0 comments (no pain point data)
+      const postsWithComments = data.posts.filter(
+        (p: Post) => parseInt(String(p.commentCount), 10) > 0
+      );
+      const finalPosts = postsWithComments.length > 0 ? postsWithComments : data.posts;
+
+      setPosts(finalPosts);
       setStepStatus("idle");
+
+      // Cache search results in localStorage (expire in 2 hours)
+      try {
+        const cacheData = { posts: finalPosts, timestamp: Date.now(), keyword: keyword.trim() };
+        localStorage.setItem(`xhs_search_${keyword.trim()}`, JSON.stringify(cacheData));
+      } catch {}
     } catch (err) {
       console.error(err);
       setErrorMessage(err instanceof Error ? err.message : "搜索时发生错误");
