@@ -38,11 +38,14 @@ async function fetchNoteComments(
   let hasMore = true;
   let pageCount = 0;
 
-  while (hasMore && allComments.length < maxComments && pageCount < 2) {
+  let retryCount = 0;
+
+  while (hasMore && allComments.length < maxComments && pageCount < 1) {
     try {
       const params = new URLSearchParams({
         note_id: noteId,
         cursor: cursor,
+        sort_strategy: "like_count",
       });
 
       const url = `${TIKHUB_BASE_URL}/api/v1/xiaohongshu/app_v2/get_note_comments?${params.toString()}`;
@@ -53,10 +56,18 @@ async function fetchNoteComments(
         },
       });
 
-      if (!response.ok) break;
+      if (!response.ok) {
+        if (retryCount < 1) { retryCount++; continue; }
+        break;
+      }
 
       const result = await response.json();
-      if (result.code !== 200 || !result.data) break;
+      if (result.code !== 200 || !result.data) {
+        if (retryCount < 1) { retryCount++; continue; }
+        break;
+      }
+
+      retryCount = 0;
 
       const data = result.data;
       const innerData = data.data || data;
@@ -69,7 +80,6 @@ async function fetchNoteComments(
         const location = comment.ip_location ? `（${comment.ip_location}）` : "";
         allComments.push(`${nickname}${location}：${comment.content}`);
 
-        // Also include sub-comments (replies)
         if (comment.sub_comments && comment.sub_comments.length > 0) {
           for (const sub of comment.sub_comments) {
             if (allComments.length >= maxComments) break;
@@ -85,6 +95,7 @@ async function fetchNoteComments(
       if (!cursor) hasMore = false;
     } catch (e) {
       console.error("[FetchComments] Comment fetch error:", e);
+      if (retryCount < 1) { retryCount++; continue; }
       break;
     }
   }
